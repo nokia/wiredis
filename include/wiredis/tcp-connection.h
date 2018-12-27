@@ -151,11 +151,11 @@ namespace nokia
             {
                 _io_service.dispatch([this] ()
                                      {
+                                         disconnect(false); // Preserve CONNECTED administration state
                                          if (!_auto_reconnect)
                                          {
                                              return;
                                          }
-                                         disconnect(false); // Preserve CONNECTED administration state
                                          _timer.expires_from_now(std::chrono::seconds(_reconnect_wait));
                                          _timer.async_wait([this] (boost::system::error_code const & error)
                                                            {
