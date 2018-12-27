@@ -1,20 +1,26 @@
 
 # wiredis
-----
 wiredis is a header-only, asynchronous c++11 client library for [redis](http://redis.io/) database server.
 
 It depends only on [boost](https://www.boost.org/) library and uses [::boost::asio::io_service](https://www.boost.org/doc/libs/1_51_0/doc/html/boost_asio/reference/io_service.html) as event handler.
 
+Tested on
+- Arch linux
+  - cmake 3.11.4
+  - g++ 8.1.1
+  - boost 1.67
+- Redhat
+  - cmake 3.12.0
+  - g++ 4.8.5
+  - boost 1.68
 
 ## Compile and install
-----
 
 ```
 $ mkdir build && cd build && cmake ../ && sudo make install
 ```
 
 ## Features
-----
 
 - Asynchronous interface
 - Standalone: depends only on [boost](https://www.boost.org) library.
@@ -25,7 +31,6 @@ $ mkdir build && cd build && cmake ../ && sudo make install
 - PUB/SUB mode
 
 ## Usage
-----
 
 You can find working examples under [examples](examples/) folder and full documention below in this document.
 
@@ -143,7 +148,6 @@ To close your connection you need to use `join()` function.
 Alternatively, you can use `sync_join()` function but be warned: it uses the `io_service` object so never call from thread being run by your `io_service` object!
 
 ## [PUB/SUB](https://redis.io/topics/pubsub) mode
-----
 
 You can use redis connection to watch a given channel.
 
@@ -166,7 +170,6 @@ Note: once you switch to [PUB/SUB](https://redis.io/topics/pubsub) mode you can'
 ```
 
 ## Documentation
-----
 
 ### redis_connection()
 ```
@@ -273,7 +276,6 @@ The logs are printed out to stdout by default. If you want to handle by your own
 
 
 ## Tests
-----
 
 To run unit tests, you need to have installed valgrind, redis-server and need to use Debug configuration.
 
