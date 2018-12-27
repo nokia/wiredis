@@ -6,6 +6,7 @@
 cmake_minimum_required(VERSION 3.7.2)
 
 project(wiredis CXX)
+set (CMAKE_CXX_STANDARD 11)
 
 set(default_build_type "Release")
 

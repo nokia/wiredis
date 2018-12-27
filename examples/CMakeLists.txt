@@ -4,8 +4,8 @@
 #
 
 cmake_minimum_required(VERSION 3.7.2)
-
 project(wiredis-examples CXX)
+set (CMAKE_CXX_STANDARD 11)
 
 find_package(Boost 1.51 REQUIRED)
 
