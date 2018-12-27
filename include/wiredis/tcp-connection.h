@@ -43,7 +43,7 @@ namespace nokia
                 _ip(""),
                 _port(0),
                 _auto_reconnect(true),
-                _keepalive_enabled(true),
+                _tcp_keepalive_enabled(true),
                 _reconnect_wait(2),
                 _parser(std::forward<Ts>(parser_args)...),
                 _timer(_io_service),
@@ -77,50 +77,10 @@ namespace nokia
                          std::function<void (boost::system::error_code const &)> disconnected_callback,
                          std::function<void (typename parser::protocol_message_type &&)> read_callback,
                          bool auto_reconnect = true,
-                         bool keepalive_enabled = true)
+                         bool tcp_keepalive_enabled = true,
+                         bool tcp_user_timeout_enabled = true)
             {
-                _astate = astate::CONNECTED;
-                _ostate = ostate::CONNECTING;
-                _ip = ip;
-                _port = port;
-                _connected_callback = connected_callback;
-                _disconnected_callback = disconnected_callback;
-                _read_callback = read_callback;
-                _auto_reconnect = auto_reconnect;
-                _keepalive_enabled = keepalive_enabled;
-
-                _socket.open(boost::asio::ip::tcp::v4());
-                set_socket_options();
-                    
-                boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::address::from_string(ip), port);
-                _socket.async_connect(endpoint,
-                                      [this] (boost::system::error_code const & error)
-                                      {
-                                          if (error)
-                                          {
-                                              _ostate = ostate::DISCONNECTED;
-                                              if (_connected_callback)
-                                              {
-                                                  _connected_callback(error);
-                                              }
-                                              reconnect();
-                                              return;
-                                          }
-                                          else
-                                          {
-                                              _ostate = ostate::CONNECTED;
-                                              _send_buffer.clear();
-                                              _send_buffer_size = 0;
-                                              
-                                              ::nokia::net::proto::char_buffer const & buffer = _parser.buffer();
-                                              _socket.async_read_some(boost::asio::buffer(buffer.ptr, buffer.size),
-                                                                      std::bind(&tcp_connection::on_read, this, std::placeholders::_1, std::placeholders::_2));
-                                              if (_connected_callback)
-                                              {
-                                                  _connected_callback(error);
-                                              }
-                                          }
-                                      });
+                internal_connect(ip, port, connected_callback, disconnected_callback, read_callback, auto_reconnect, tcp_keepalive_enabled, tcp_user_timeout_enabled);
             }
 
 
@@ -211,12 +171,14 @@ namespace nokia
                                                                    return;
                                                                }
                                                                
-                                                               connect(_ip,
+                                                               internal_connect(_ip,
                                                                        _port,
                                                                        _connected_callback,
                                                                        _disconnected_callback,
                                                                        _read_callback,
-                                                                       _keepalive_enabled);
+                                                                       _auto_reconnect,
+                                                                       _tcp_keepalive_enabled,
+                                                                       _tcp_user_timeout_enabled);
                                                            });
                                      });
 
@@ -251,6 +213,61 @@ namespace nokia
 
             
         protected:
+
+
+            void internal_connect(std::string const & ip,
+                         uint16_t port,
+                         std::function<void (boost::system::error_code const &)> connected_callback,
+                         std::function<void (boost::system::error_code const &)> disconnected_callback,
+                         std::function<void (typename parser::protocol_message_type &&)> read_callback,
+                         bool auto_reconnect,
+                         bool tcp_keepalive_enabled,
+                         bool tcp_user_timeout_enabled)
+            {
+                _astate = astate::CONNECTED;
+                _ostate = ostate::CONNECTING;
+                _ip = ip;
+                _port = port;
+                _connected_callback = connected_callback;
+                _disconnected_callback = disconnected_callback;
+                _read_callback = read_callback;
+                _auto_reconnect = auto_reconnect;
+                _tcp_keepalive_enabled = tcp_keepalive_enabled;
+                _tcp_user_timeout_enabled = tcp_user_timeout_enabled;
+
+                _socket.open(boost::asio::ip::tcp::v4());
+                set_socket_options();
+                    
+                boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::address::from_string(ip), port);
+                _socket.async_connect(endpoint,
+                                      [this] (boost::system::error_code const & error)
+                                      {
+                                          if (error)
+                                          {
+                                              _ostate = ostate::DISCONNECTED;
+                                              if (_connected_callback)
+                                              {
+                                                  _connected_callback(error);
+                                              }
+                                              reconnect();
+                                              return;
+                                          }
+                                          else
+                                          {
+                                              _ostate = ostate::CONNECTED;
+                                              _send_buffer.clear();
+                                              _send_buffer_size = 0;
+                                              
+                                              ::nokia::net::proto::char_buffer const & buffer = _parser.buffer();
+                                              _socket.async_read_some(boost::asio::buffer(buffer.ptr, buffer.size),
+                                                                      std::bind(&tcp_connection::on_read, this, std::placeholders::_1, std::placeholders::_2));
+                                              if (_connected_callback)
+                                              {
+                                                  _connected_callback(error);
+                                              }
+                                          }
+                                      });
+            }
 
 
             void try_to_send(std::size_t start_byte = 0)
@@ -377,6 +394,11 @@ namespace nokia
                  *   (simple ACKs are not considered data) and the first keepalive probe; after the connection is marked to need keepalive, this counter is not used any further.
                  * TCP_KEEPINTVL: overrides tcp_keepalive_intvl. The interval between subsequential keepalive probes, regardless of what the connection has exchanged in the meantime.
                  * TCP_KEEPCNT: overrides tcp_keepalive_probes. The number of unacknowledged probes to send before considering the connection dead and notifying the application layer.
+                 *
+                 * TCP_USER_TIMEOUT: how long could be a packet unack'ed in milliseconds
+                 * Note: the timout check is bound with retransmission try (exponential),
+                 *       so the timer fire (connection close) won't be accurate.
+                 *       See: https://lore.kernel.org/patchwork/patch/960970/
                  */
 
                 auto native_socket = _socket.native_handle();
@@ -384,7 +406,7 @@ namespace nokia
                 socklen_t optlen = sizeof(optval);
                 setsockopt(native_socket, IPPROTO_TCP, TCP_SYNCNT, &optval, optlen);
                 
-                if (_keepalive_enabled)
+                if (_tcp_keepalive_enabled)
                 {
                     // turn on
                     boost::asio::socket_base::keep_alive keep_alive_option(true);
@@ -397,6 +419,11 @@ namespace nokia
                     setsockopt(native_socket, SOL_TCP, TCP_KEEPINTVL, &optval, optlen);
                     optval = 3;
                     setsockopt(native_socket, SOL_TCP, TCP_KEEPCNT, &optval, optlen);
+                }
+                if (_tcp_user_timeout_enabled)
+                {
+                    optval = 6000;
+                    setsockopt(native_socket, SOL_TCP, TCP_USER_TIMEOUT, &optval, optlen);
                 }
                 
             }
@@ -417,7 +444,8 @@ namespace nokia
             std::function<void (typename parser::protocol_message_type &&)> _read_callback;
 
             bool _auto_reconnect;
-            bool _keepalive_enabled;
+            bool _tcp_keepalive_enabled;
+            bool _tcp_user_timeout_enabled;
             uint64_t _reconnect_wait; // Before automatic reconnect, wait this amount of seconds.
 
             parser _parser;

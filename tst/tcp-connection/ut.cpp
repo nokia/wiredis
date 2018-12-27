@@ -177,6 +177,73 @@ TEST(tcp_connection, cable_cut)
 
 
 
+TEST(tcp_connection, cable_cut_during_traffic)
+{
+    stop_server();
+    msleep(2000);
+    start_server();
+    ::nokia::net::tcp_connection<> con(ios, 100);
+
+    uint32_t num_of_disconnection{0};
+    
+    con.connect("127.0.0.1",
+                6379,
+                [&] (boost::system::error_code const & error)
+                {
+                    if (error)
+                    {
+                        std::cout << "UT: Could not connect, reconnecting." << std::endl;
+                        return;
+                    }
+                },
+                [&] (boost::system::error_code const & ec)
+                {
+                    std::cout << "UT: Connection lost. error core: " << ec << std::endl;
+                    std::cout << std::time(nullptr) << std::endl;
+                    ++num_of_disconnection;
+                },
+                [&] (::nokia::net::proto::char_buffer && reply)
+                {
+                },
+                true, // auto-reconnect
+                true, // keepalive
+                true); // user-timeout
+
+    ASSERT_TRUE(wait_for_true([&] ()
+                              {
+                                  return con.connected();
+                              },
+                              10000));
+
+    // cut cable
+    system("sudo iptables -A INPUT -p tcp --destination-port 6379 -j DROP");
+
+    // send a command, it should be retransmitted over and over, so tcp-keepalive will not work
+    std::string small_command{"*3\r\n$3\r\nSET\r\n$9\r\nafter_key\r\n$5\r\nvalue\r\n"};
+    con.send(std::move(small_command));
+    std::cout << "send message: " << std::time(nullptr) << std::endl;
+
+    ASSERT_TRUE(wait_for_true([&] ()
+                              {
+                                  return !con.connected();
+                              },
+                              20000));
+
+
+    // restore cable
+    system("sudo iptables -D INPUT -p tcp --destination-port 6379 -j DROP");
+    ASSERT_TRUE(wait_for_true([&] ()
+                              {
+                                  return con.connected();
+                              },
+                              10000));
+
+    con.disconnect();
+    con.sync_join();
+    ASSERT_EQ(1, num_of_disconnection);
+}
+
+
 
 TEST(tcp_connection, disconnect_during_reconnecting)
 {
