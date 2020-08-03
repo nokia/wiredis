@@ -288,3 +288,8 @@ cmake ../ -G Ninja -DCMAKE_BUILD_TYPE=Debug
 ninja
 ctest  -T memcheck
 ```
+
+
+## License
+
+This project is licensed under the BSD-3-Clause license - see the [LICENSE](https://github.com/nokia/wiredis/blob/master/LICENSE).
